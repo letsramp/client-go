@@ -1,0 +1,7 @@
+services:
+  helloworld:
+    image: helloworld:v0.0
+    ports:
+      - 50051:50051
+    volumes:
+      - ./clients:/tmp/clients/
