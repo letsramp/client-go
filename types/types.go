@@ -412,9 +412,9 @@ type TestResult struct {
 	Executed bool   `json:"executed,omitempty" yaml:"executed,omitempty" bson:"executed,omitempty"`
 	Error    string `json:"error,omitempty" yaml:"error,omitempty" bson:"error,omitempty"`
 	// For saving input, for output validation in future
-	Input string `json:"input,omitempty" yaml:"input,omitempty" bson:"input,omitempty"`
+	Input *RequestLog `json:"input,omitempty" yaml:"input,omitempty" bson:"input,omitempty"`
 	// Output of command / request
-	Output string `json:"output,omitempty" yaml:"output,omitempty" bson:"output,omitempty"`
+	Output *ResponseLog `json:"output,omitempty" yaml:"output,omitempty" bson:"output,omitempty"`
 
 	Type TestResultType `json:"type,omitempty" yaml:"type,omitempty" bson:"type,omitempty"`
 
@@ -619,4 +619,30 @@ type HelmOptions struct {
 	Repo string
 	// Version is the version of the chart to fetch.
 	Version string
+}
+
+// struct that stores information of generated request
+type RequestLog struct {
+	// URL for test detination
+	Path    string            `json:",omitempty" yaml:",omitempty"`
+	// HTTP Method type
+	Method  string            `json:",omitempty" yaml:",omitempty"`
+	// headers of the request
+	Headers map[string]string `json:",omitempty" yaml:",omitempty"`
+	// cookies of the request
+	Cookies map[string]string `json:",omitempty" yaml:",omitempty"`
+	// body of request
+	Payload string            `json:",omitempty" yaml:",omitempty"`
+}
+
+// struct that stores information of response
+type ResponseLog struct {
+	// HTTP statuscode of response
+	StatusCode int    `json:",omitempty" yaml:",omitempty"`
+	// headers of the request
+	Headers map[string]string `json:",omitempty" yaml:",omitempty"`
+	// cookies of the response
+	Cookies map[string]string `json:",omitempty" yaml:",omitempty"`
+	// body of response
+	Payload    string `json:",omitempty" yaml:",omitempty"`
 }
