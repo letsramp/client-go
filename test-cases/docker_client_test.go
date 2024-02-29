@@ -81,8 +81,9 @@ func TestDockerEchoService(t *testing.T) {
 	assert.NotEqual(t, nil, step)
 	scenario.SetAssertEqual(step.GetResponseValue("message"), "ping pong")
 
-	err = dockerClient.TesterStart([]*client.Scenario{scenario}, "echo-test", nil, nil)
+	status, err := dockerClient.TesterStart([]*client.Scenario{scenario}, "echo-test", nil, nil)
 	assert.Equal(t, nil, err)
+	assert.Equal(t, types.TesterStatusType("finished"), status.Status)
 
 	dockerClient.UninstallWorker()
 }
@@ -143,8 +144,9 @@ def handler(req):
 	assert.NotEqual(t, nil, step)
 	scenario.SetAssertEqual(step.GetResponseValue("message"), "testtemp")
 
-	err = dockerClient.TesterStart([]*client.Scenario{scenario}, "docker-standalone-test", nil, nil)
+	status, err := dockerClient.TesterStart([]*client.Scenario{scenario}, "docker-standalone-test", nil, nil)
 	assert.Equal(t, nil, err)
+	assert.Equal(t, types.TesterStatusType("finished"), status.Status)
 
 	dockerClient.UninstallWorker()
 }
@@ -196,8 +198,9 @@ func TestDockerCompose(t *testing.T) {
 	assert.NotEqual(t, nil, step)
 	scenario.SetAssertEqual(step.GetResponseValue("message"), "Hello test")
 
-	err = dockerClient.TesterStart([]*client.Scenario{scenario}, "docker-standalone-test", nil, nil)
+	status, err := dockerClient.TesterStart([]*client.Scenario{scenario}, "docker-standalone-test", nil, nil)
 	assert.Equal(t, nil, err)
+	assert.Equal(t, types.TesterStatusType("finished"), status.Status)
 
 	dockerClient.UninstallWorker()
 }
