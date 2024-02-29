@@ -405,17 +405,30 @@ type TestTimeseriesStat struct {
 }
 
 type TestResult struct {
-	Status      TesterStatusType `json:"status,omitempty" yaml:"status,omitempty" bson:"status,omitempty"`
-	Description string           `json:"description,omitempty" yaml:"description,omitempty" bson:"description,omitempty"`
-	NestedInfo  string           `json:"nestedInfo" yaml:"nestedInfo" bson:"nestedInfo"`
+	Status TesterStatusType `json:"status,omitempty" yaml:"status,omitempty" bson:"status,omitempty"`
+	// name of result Node - one of scenario / request / command, etc.
+	Name string `json:"name" yaml:"name" bson:"name"`
+	// nested description
+	Description string `json:"description,omitempty" yaml:"description,omitempty" bson:"description,omitempty"`
+	// nested pattern
+	NestedInfo string `json:"nestedInfo" yaml:"nestedInfo" bson:"nestedInfo"`
+	// step description
+	StepDescription string `json:"stepDescription,omitempty" yaml:"stepDescription,omitempty"`
+	// Name if exists
+	StepName string `json:"stepName,omitempty" yaml:"stepName,omitempty"`
+	// parent nextedInfo
+	Parent string `json:"parent,omitempty" yaml:"parent,omitempty"`
 	// Whether request was executed without errors
-	Executed bool   `json:"executed,omitempty" yaml:"executed,omitempty" bson:"executed,omitempty"`
-	Error    string `json:"error,omitempty" yaml:"error,omitempty" bson:"error,omitempty"`
+	Executed bool `json:"executed,omitempty" yaml:"executed,omitempty" bson:"executed,omitempty"`
+	// Error message
+	Error string `json:"error,omitempty" yaml:"error,omitempty" bson:"error,omitempty"`
 	// For saving input, for output validation in future
 	Input *RequestLog `json:"input,omitempty" yaml:"input,omitempty" bson:"input,omitempty"`
 	// Output of command / request
 	Output *ResponseLog `json:"output,omitempty" yaml:"output,omitempty" bson:"output,omitempty"`
-
+	// to store state of current step
+	State *TesterState `json:"state,omitempty" yaml:"state,omitempty" bson:"state,omitempty"`
+	// test type. One of request, command, load, repeat, ...
 	Type TestResultType `json:"type,omitempty" yaml:"type,omitempty" bson:"type,omitempty"`
 
 	Begin    time.Time     `json:"begin,omitempty" yaml:"begin,omitempty"`
@@ -621,28 +634,44 @@ type HelmOptions struct {
 	Version string
 }
 
-// struct that stores information of generated request
+// bookkeeping state at each scenario step
+type TesterState struct {
+	// request Vars
+	Vars map[string]interface{} `json:"vars,omitempty" yaml:"vars,omitempty"`
+	// scenario Vars
+	ScenarioVars map[string]interface{} `json:"scenarioVars,omitempty" yaml:"scenarioVars,omitempty"`
+	// export
+	Exports map[string]interface{} `json:"exports,omitempty" yaml:"exports,omitempty"`
+	// blob overrides
+	BlobOverrides map[string]interface{} `json:"blobOverrides,omitempty" yaml:"blobOverrides,omitempty"`
+}
+
+// struct that stores information of request
 type RequestLog struct {
 	// URL for test detination
-	Path    string            `json:",omitempty" yaml:",omitempty"`
+	Path string `json:",omitempty" yaml:",omitempty"`
 	// HTTP Method type
-	Method  string            `json:",omitempty" yaml:",omitempty"`
+	Method string `json:",omitempty" yaml:",omitempty"`
 	// headers of the request
 	Headers map[string]string `json:",omitempty" yaml:",omitempty"`
 	// cookies of the request
 	Cookies map[string]string `json:",omitempty" yaml:",omitempty"`
+	// form params
+	FormParams map[string]string `json:",omitempty" yaml:",omitempty"`
 	// body of request
-	Payload string            `json:",omitempty" yaml:",omitempty"`
+	Payload string `json:",omitempty" yaml:",omitempty"`
 }
 
 // struct that stores information of response
 type ResponseLog struct {
 	// HTTP statuscode of response
-	StatusCode int    `json:",omitempty" yaml:",omitempty"`
+	StatusCode int `json:",omitempty" yaml:",omitempty"`
 	// headers of the request
 	Headers map[string]string `json:",omitempty" yaml:",omitempty"`
 	// cookies of the response
 	Cookies map[string]string `json:",omitempty" yaml:",omitempty"`
 	// body of response
-	Payload    string `json:",omitempty" yaml:",omitempty"`
+	Payload string `json:",omitempty" yaml:",omitempty"`
+	// duration of the request
+	Duration time.Time `json:",omitempty" yaml:",omitempty"`
 }

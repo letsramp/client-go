@@ -114,8 +114,9 @@ func TestK8sEchoService(t *testing.T) {
 	assert.NotEqual(t, nil, step)
 	scenario.SetAssertEqual(step.GetResponseValue("message"), "ping pong")
 
-	err = k8sClient.TesterStart([]*client.Scenario{scenario}, "k8s_echo_test", nil, nil)
+	status, err := k8sClient.TesterStart([]*client.Scenario{scenario}, "k8s_echo_test", nil, nil)
 	assert.Equal(t, nil, err)
+	assert.Equal(t, types.TesterStatusType("finished"), status.Status)
 
 	err = k8sClient.UninstallWorker()
 	assert.Equal(t, nil, err)
@@ -194,8 +195,9 @@ func TestK8sEchoServiceUsingMocker(t *testing.T) {
 	scenario.SetAssertEqual(step.GetResponseValue("message"), "ping pong")
 	scenario.SetAssertEqual(step.GetResponseCode(), "200")
 
-	err = k8sClient.TesterStart([]*client.Scenario{scenario}, "k8s_mocked_echo_test", nil, nil)
+	status, err := k8sClient.TesterStart([]*client.Scenario{scenario}, "k8s_mocked_echo_test", nil, nil)
 	assert.Equal(t, nil, err)
+	assert.Equal(t, types.TesterStatusType("finished"), status.Status)
 
 	err = k8sClient.UninstallWorker()
 	assert.Equal(t, nil, err)
@@ -319,8 +321,9 @@ func TestK8sRBAC(t *testing.T) {
 		"username":          "user@user",
 		"role_type":         "unknown",
 	}
-	err = k8sClient.TesterStart([]*client.Scenario{scenario1, scenario2}, "k8s_rbac_test", globalVars, nil)
+	status, err := k8sClient.TesterStart([]*client.Scenario{scenario1, scenario2}, "k8s_rbac_test", globalVars, nil)
 	assert.Equal(t, nil, err)
+	assert.Equal(t, types.TesterStatusType("finished"), status.Status)
 
 	err = k8sClient.UninstallWorker()
 	assert.Equal(t, nil, err)
@@ -412,8 +415,9 @@ func TestK8sChaining(t *testing.T) {
 		"name": step2Value})
 	scenario.SetAssertEqual(step2Value, "name1temp1temp")
 
-	err = k8sClient.TesterStart([]*client.Scenario{scenario}, "k8s_chaining", nil, nil)
+	status, err := k8sClient.TesterStart([]*client.Scenario{scenario}, "k8s_chaining", nil, nil)
 	assert.Equal(t, nil, err)
+	assert.Equal(t, types.TesterStatusType("finished"), status.Status)
 
 	err = k8sClient.UninstallWorker()
 	assert.Equal(t, nil, err)
