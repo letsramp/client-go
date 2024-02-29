@@ -186,47 +186,52 @@ func (k *KubernetesClient) MockerApply(response []*ResponseValue, trafficConfig 
 // TesterStart starts the tests on the Kubernetes cluster
 // It takes the scenario, test name, global variables, and global headers as parameters.
 // It returns an error if the tests fail to start.
-func (k *KubernetesClient) TesterStart(scenario []*Scenario, testName string, globalVars map[string]interface{}, globalHeaders map[string]string) error {
+func (k *KubernetesClient) TesterStart(
+	scenario []*Scenario,
+	testName string,
+	globalVars map[string]interface{},
+	globalHeaders map[string]string,
+) (*types.TestStatusResponse, error) {
 	testRequest, err := generateTestPostRequest(scenario, k.Namespace, testName)
 	testRequest.Description.Test.GlobalHeaders = globalHeaders
 	testRequest.Description.Test.GlobalVars = globalVars
 	if err != nil {
-		return fmt.Errorf("failed to generate test post request: %w", err)
+		return nil, fmt.Errorf("failed to generate test post request: %w", err)
 	}
 	log.Infof("Starting tester")
 	requestByte, err := json.Marshal(testRequest)
 	if err != nil {
-		return fmt.Errorf("failed to marshal test request: %w", err)
+		return nil, fmt.Errorf("failed to marshal test request: %w", err)
 	}
 	k8sLcm, err := lcm.NewK8SLCM(k.KubeconfigPath, k.K8sContext, k.Namespace, nil, &lcm.LCMOption{})
 	if err != nil {
-		return fmt.Errorf("failed to setup Kubernetes client: %w", err)
+		return nil, fmt.Errorf("failed to setup Kubernetes client: %w", err)
 	}
 	workerPodName, err := k8sLcm.GetWorkerPodName()
 	if err != nil {
-		return nil
+		return nil, fmt.Errorf("failed to get worker pod name: %w", err)
 	}
 
 	postPayload := generateK8sTestPostRequest(requestByte)
 	output, err := k8sLcm.ExecCommand(context.Background(), "", workerPodName, "", "/", postPayload)
 	if err != nil {
 		log.Errorf("failed to start tests: %v", err)
-		return fmt.Errorf("failed to start tests: %w", err)
+		return nil, fmt.Errorf("failed to start tests: %w", err)
 	}
 
 	response, respStatus, err := parseCurlOutput(output)
 	if err != nil {
 		log.Errorf("failed to parse response: %v", err)
-		return fmt.Errorf("failed to parse response from worker: %w", err)
+		return nil, fmt.Errorf("failed to parse response from worker: %w", err)
 	}
 	if respStatus != http.StatusAccepted {
-		return fmt.Errorf("worker rejected tests: %s", response.Error)
+		return nil, fmt.Errorf("worker rejected tests: %s", response.Error)
 	}
 	responseStatus := k.TestStatus()
 	if responseStatus.Status == types.TesterFailed {
-		return fmt.Errorf("tester failed: %s", responseStatus.Error)
+		return nil, fmt.Errorf("tester failed: %s", responseStatus.Error)
 	}
-	return nil
+	return responseStatus, nil
 }
 
 // TestStatus returns the status of the tests on the Kubernetes cluster

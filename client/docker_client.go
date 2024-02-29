@@ -38,7 +38,7 @@ type Client interface {
 	// TesterStart starts the test in the client's environment.
 	// It takes the test scenario, test name, global variables, and global headers as parameters.
 	// It returns an error if the test fails to start.
-	TesterStart(scenario []*Scenario, testName string, globalVars map[string]interface{}, globalHeaders map[string]string) error
+	TesterStart(scenario []*Scenario, testName string, globalVars map[string]interface{}, globalHeaders map[string]string) (*types.TestStatusResponse, error)
 
 	// MockerApply applies the mock in the client's environment.
 	// It takes the response values and traffic configuration as parameters.
@@ -106,19 +106,24 @@ func (c *DockerClient) SetWorkerImage(image, tag string) {
 // TesterStart starts the test in the docker environment.
 // It takes the test scenario, test name, global variables, and global headers as parameters.
 // It returns an error if the test fails to start.
-func (c *DockerClient) TesterStart(scenario []*Scenario, testName string, globalVars map[string]interface{}, globalHeaders map[string]string) error {
+func (c *DockerClient) TesterStart(
+	scenario []*Scenario,
+	testName string,
+	globalVars map[string]interface{},
+	globalHeaders map[string]string,
+) (*types.TestStatusResponse, error) {
 	testRequest, err := generateTestPostRequest(scenario, c.Address, testName)
 	testRequest.Description.Test.GlobalHeaders = globalHeaders
 	testRequest.Description.Test.GlobalVars = globalVars
 	if err != nil {
-		return fmt.Errorf("failed to generate test request: %w", err)
+		return nil, fmt.Errorf("failed to generate test request: %w", err)
 	}
 
 	endpoint := getTestEndpointForStandalone(c.Address)
 
 	requestByte, err := json.Marshal(testRequest)
 	if err != nil {
-		return fmt.Errorf("failed to marshal test request: %w", err)
+		return nil, fmt.Errorf("failed to marshal test request: %w", err)
 	}
 
 	log.Infof("request %+v", testRequest)
@@ -126,7 +131,7 @@ func (c *DockerClient) TesterStart(scenario []*Scenario, testName string, global
 
 	request, err := http.NewRequest(http.MethodPost, endpoint, bytes.NewBuffer(requestByte))
 	if err != nil {
-		return fmt.Errorf("failed to create HTTP request for test: %w", err)
+		return nil, fmt.Errorf("failed to create HTTP request for test: %w", err)
 	}
 
 	request.Header.Add("Content-Type", "application/json")
@@ -137,31 +142,31 @@ func (c *DockerClient) TesterStart(scenario []*Scenario, testName string, global
 	if err != nil {
 		log.Errorf("failed to start tests: %v", err)
 		if urlErr, ok := err.(*url.Error); ok {
-			return fmt.Errorf("URL-related error occurred while starting test: %w", urlErr)
+			return nil, fmt.Errorf("URL-related error occurred while starting test: %w", urlErr)
 		}
-		return fmt.Errorf("failed to start tester: %w", err)
+		return nil, fmt.Errorf("failed to start tester: %w", err)
 	}
 
 	body, err := io.ReadAll(resp.Body)
 	defer resp.Body.Close()
 	if err != nil {
-		return fmt.Errorf("failed to read response from worker: %w", err)
+		return nil, fmt.Errorf("failed to read response from worker: %w", err)
 	}
 
 	var response *types.TestStatusResponse
 	if err = json.Unmarshal(body, &response); err != nil {
-		return fmt.Errorf("failed to parse response in worker %w", err)
+		return nil, fmt.Errorf("failed to parse response in worker %w", err)
 	}
 
 	if resp.StatusCode != http.StatusAccepted {
-		return fmt.Errorf("worker rejected tester start %v", response.Error)
+		return nil, fmt.Errorf("worker rejected tester start %v", response.Error)
 	}
 
 	responseStatus := c.TestStatus()
 	if responseStatus.Status == types.TesterFailed {
-		return fmt.Errorf("tester failed: %s", responseStatus.Error)
+		return nil, fmt.Errorf("tester failed: %s", responseStatus.Error)
 	}
-	return nil
+	return responseStatus, nil
 }
 
 func (c *DockerClient) MockerApply(response []*ResponseValue, trafficConfig *types.TrafficConfig) error {
