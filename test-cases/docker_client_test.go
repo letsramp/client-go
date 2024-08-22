@@ -41,7 +41,10 @@ func TestDockerEchoService(t *testing.T) {
 	err = cmd.Run()
 	assert.Equal(t, nil, err)
 
-	dockerClient = client.NewDockerClient("localhost:35142", "echo_default", 35142)
+	dockerClient, err = client.NewDockerClient("localhost:35142", "echo_default")
+	if err != nil {
+		t.Fatal(err)
+	}
 	updateWorker(dockerClient)
 
 	err = dockerClient.InstallWorker()
@@ -54,7 +57,7 @@ func TestDockerEchoService(t *testing.T) {
 		Port:         12346,
 	}
 
-	restEndpoint := client.NewRestEndpoint("echo-get", "/echo/{ msg }", "", "", service)
+	restEndpoint := client.NewRestEndpoint("echo-get", "/echo/{ msg }", "", service)
 
 	scenario := client.NewScenario("echo_test")
 
@@ -89,10 +92,14 @@ func TestDockerEchoService(t *testing.T) {
 }
 
 func TestDockerStandalone(t *testing.T) {
-	dockerClient = client.NewDockerClient("localhost:35142", "", 35142)
+	var err error
+	dockerClient, err = client.NewDockerClient("localhost:35142", "")
+	if err != nil {
+		t.Fatal(err)
+	}
 	updateWorker(dockerClient)
 
-	err := dockerClient.InstallWorker()
+	err = dockerClient.InstallWorker()
 	assert.Equal(t, nil, err)
 
 	service := &types.Service{
@@ -167,11 +174,13 @@ func TestDockerCompose(t *testing.T) {
 	err = cmd.Run()
 	assert.Equal(t, nil, err)
 
-	dockerClient = client.NewDockerClient(
+	dockerClient, err = client.NewDockerClient(
 		"localhost:35142",
 		"helloworld_default",
-		35142,
 	)
+	if err != nil {
+		t.Fatal(err)
+	}
 	updateWorker(dockerClient)
 
 	err = dockerClient.InstallWorker()

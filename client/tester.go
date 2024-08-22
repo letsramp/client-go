@@ -65,6 +65,11 @@ func NewRequest(name string, endpointDesc *types.EndpointDescription, methodName
 	}
 }
 
+func (r *Request) SetGraphqlQuery(query *types.GraphqlParam) error {
+	r.TestRequest.GraphqlParam = query
+	return nil
+}
+
 func (r *Request) SetPythonFunction(pythonFunction, pythonPath string) error {
 	if r.TestRequest.Value == nil {
 		r.TestRequest.Value = &types.Value{}

@@ -48,7 +48,7 @@ type KubernetesClient struct {
 }
 
 // NewKubernetesClient creates a new Kubernetes client
-func NewKubernetesClient(kubeconfigPath, k8sContext, clusterName, namespace string) *KubernetesClient {
+func NewKubernetesClient(kubeconfigPath, k8sContext, clusterName, namespace string) (*KubernetesClient, error) {
 	return &KubernetesClient{
 		KubeconfigPath:  kubeconfigPath,
 		K8sContext:      k8sContext,
@@ -56,7 +56,7 @@ func NewKubernetesClient(kubeconfigPath, k8sContext, clusterName, namespace stri
 		Namespace:       namespace,
 		WorkerImageRepo: types.SkyrampWorkerImage,
 		WorkerImageTag:  types.SkyrampWorkerImageTag,
-	}
+	}, nil
 }
 
 // InstallWorker installs the Skyramp worker on the Kubernetes cluster
@@ -224,10 +224,11 @@ func (k *KubernetesClient) TesterStart(
 		log.Errorf("failed to parse response: %v", err)
 		return nil, fmt.Errorf("failed to parse response from worker: %w", err)
 	}
+	testId := response.TestID
 	if respStatus != http.StatusAccepted {
 		return nil, fmt.Errorf("worker rejected tests: %s", response.Error)
 	}
-	responseStatus := k.TestStatus()
+	responseStatus := k.TestStatus(testId)
 	if responseStatus.Status == types.TesterFailed {
 		return nil, fmt.Errorf("tester failed: %s", responseStatus.Error)
 	}
@@ -236,14 +237,14 @@ func (k *KubernetesClient) TesterStart(
 
 // TestStatus returns the status of the tests on the Kubernetes cluster
 // It returns the status of the tests.
-func (k *KubernetesClient) TestStatus() *types.TestStatusResponse {
+func (k *KubernetesClient) TestStatus(testId string) *types.TestStatusResponse {
 	var testStatus *types.TestStatusResponse
 	deadline := time.Now().Add(types.WorkerWaitTime)
 retry:
 	for retries := 0; time.Now().Before(deadline) && retries < maxRetries; retries++ {
 		var status int
 		var err error
-		testStatus, status, err = k.GetTesterStatus()
+		testStatus, status, err = k.GetTesterStatus(testId)
 		if err != nil {
 			testStatus = &types.TestStatusResponse{
 				Status: types.TesterFailed,
@@ -275,8 +276,8 @@ retry:
 	return testStatus
 }
 
-func (k *KubernetesClient) GetTesterStatus() (*types.TestStatusResponse, int, error) {
-	statusPayload := generateTestStatusRequest()
+func (k *KubernetesClient) GetTesterStatus(testId string) (*types.TestStatusResponse, int, error) {
+	statusPayload := generateTestStatusRequest(testId)
 	k8sLcm, err := lcm.NewK8SLCM(k.KubeconfigPath, k.K8sContext, k.Namespace, nil, &lcm.LCMOption{})
 	if err != nil {
 		return nil, 0, fmt.Errorf("failed to setup Kubernetes client: %w", err)
@@ -295,9 +296,9 @@ func (k *KubernetesClient) GetTesterStatus() (*types.TestStatusResponse, int, er
 	return parseCurlOutput(output)
 }
 
-func generateTestStatusRequest() string {
-	return fmt.Sprintf("curl -i localhost:%d/%s",
-		types.WorkerManagementPort, types.WorkerTestPath)
+func generateTestStatusRequest(testId string) string {
+	return fmt.Sprintf("curl -i localhost:%d/%s/%s",
+		types.WorkerManagementPort, types.WorkerTestPath, testId)
 }
 
 func generateK8sTestPostRequest(payload []byte) string {

@@ -33,12 +33,15 @@ func TestK8sEchoService(t *testing.T) {
 	namespace := "test-echo-svc"
 	k8sContext := fmt.Sprintf("kind-%s", clusterName)
 	// Create the Kubernetes client
-	k8sClient = client.NewKubernetesClient(
+	k8sClient, err = client.NewKubernetesClient(
 		kubeconfig,
 		k8sContext,
 		clusterName,
 		namespace,
 	)
+	if err != nil {
+		t.Fatal(err)
+	}
 	updateWorker(k8sClient)
 
 	// Install Skyramp worker
@@ -87,7 +90,7 @@ func TestK8sEchoService(t *testing.T) {
 		Port:         12346,
 	}
 	// Create the REST endpoint
-	restEndpoint := client.NewRestEndpoint("echo-get", "/echo/{ msg }", "", "", service)
+	restEndpoint := client.NewRestEndpoint("echo-get", "/echo/{ msg }", "", service)
 	// Create the scenario
 	scenario := client.NewScenario("echo_test")
 	// Create the request
@@ -131,7 +134,7 @@ func TestK8sEchoServiceUsingMocker(t *testing.T) {
 
 	namespace := "test-mocked-echo-svc"
 	// Create the Kubernetes client
-	k8sClient = client.NewKubernetesClient(
+	k8sClient, _ = client.NewKubernetesClient(
 		kubeconfig,
 		fmt.Sprintf("kind-%s", clusterName),
 		clusterName,
@@ -149,7 +152,7 @@ func TestK8sEchoServiceUsingMocker(t *testing.T) {
 		Port:         12346,
 	}
 
-	restEndpoint := client.NewRestEndpoint("echo-get", "/echo/{ msg }", "", "", service)
+	restEndpoint := client.NewRestEndpoint("echo-get", "/echo/{ msg }", "", service)
 
 	response := client.NewResponseValue(
 		"echo_get",
@@ -210,7 +213,7 @@ func TestK8sRBAC(t *testing.T) {
 
 	namespace := "test-rbac"
 	// Create the Kubernetes client
-	k8sClient = client.NewKubernetesClient(
+	k8sClient, _ = client.NewKubernetesClient(
 		kubeconfig,
 		fmt.Sprintf("kind-%s", clusterName),
 		clusterName,
@@ -228,8 +231,8 @@ func TestK8sRBAC(t *testing.T) {
 		Port:         60000,
 	}
 
-	loginEndpoint := client.NewRestEndpoint("rbac-login", "/auth/v1/login", "", "", service)
-	logoutEndpoint := client.NewRestEndpoint("rbac-logout", "/auth/v1/logout", "", "", service)
+	loginEndpoint := client.NewRestEndpoint("rbac-login", "/auth/v1/login", "", service)
+	logoutEndpoint := client.NewRestEndpoint("rbac-logout", "/auth/v1/logout", "", service)
 	loginResponse := client.NewResponseValue(
 		"user_login",
 		loginEndpoint,
@@ -336,7 +339,7 @@ func TestK8sChaining(t *testing.T) {
 
 	namespace := "test-chaining"
 	// Create the Kubernetes client
-	k8sClient = client.NewKubernetesClient(
+	k8sClient, _ = client.NewKubernetesClient(
 		kubeconfig,
 		fmt.Sprintf("kind-%s", clusterName),
 		clusterName,

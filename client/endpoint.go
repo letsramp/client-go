@@ -55,21 +55,24 @@ func NewGrpcEndpoint(name, grpcServiceName string, protoFile, address string, se
 // openApiFile: the path of the openapi file
 // address: the address of the service
 // serviceOption: the service option
-func NewRestEndpoint(name, path string, openApiFile, address string, serviceOption *types.Service) *types.EndpointDescription {
+func NewRestEndpoint(name, path, openApiFile string, serviceOption *types.Service) *types.EndpointDescription {
 	endpointDescription := &types.EndpointDescription{
 		Endpoints: []*types.Endpoint{
 			{
 				Name:        name,
 				ServiceName: serviceOption.Name,
+				RestPath:    path,
 				Methods:     []*types.Method{},
 			},
 		},
 		Services: []*types.Service{
 			{
-				Name:     serviceOption.Name,
-				Port:     serviceOption.Port,
-				Protocol: serviceOption.Protocol,
-				Secure:   serviceOption.Secure,
+				Name:         serviceOption.Name,
+				Port:         serviceOption.Port,
+				Protocol:     serviceOption.Protocol,
+				Secure:       serviceOption.Secure,
+				Addr:         serviceOption.Addr,
+				ServiceAlias: serviceOption.ServiceAlias,
 				Endpoints: []string{
 					name,
 				},
@@ -81,16 +84,6 @@ func NewRestEndpoint(name, path string, openApiFile, address string, serviceOpti
 			Path: openApiFile,
 		}
 	}
-	if path != "" {
-		endpointDescription.Endpoints[0].RestPath = path
-	}
-
-	if address != "" {
-		endpointDescription.Services[0].Addr = address
-	} else {
-		endpointDescription.Services[0].ServiceAlias = serviceOption.ServiceAlias
-	}
-
 	return endpointDescription
 }
 
@@ -109,6 +102,11 @@ func updateEndpoint(endpointDesc *types.EndpointDescription, methodName string) 
 				Name: methodName,
 			})
 		} else if len(endpointDesc.Services) > 0 && endpointDesc.Services[0].Protocol == types.Rest {
+			endpointDesc.Endpoints[0].Methods = append(endpointDesc.Endpoints[0].Methods, &types.Method{
+				Name: methodName,
+				Type: types.RestMethodType(methodName),
+			})
+		} else if len(endpointDesc.Services) > 0 && endpointDesc.Services[0].Protocol == types.Graphql {
 			endpointDesc.Endpoints[0].Methods = append(endpointDesc.Endpoints[0].Methods, &types.Method{
 				Name: methodName,
 				Type: types.RestMethodType(methodName),
