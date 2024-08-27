@@ -62,7 +62,11 @@ type RestParam struct {
 	Value interface{}   `json:"value,omitempty" yaml:"value,omitempty"`
 }
 
-type RestMethodType string
+type (
+	RestMethodType string
+	GraphqlMethod  string
+	ContentType    string
+)
 
 const (
 	GetMethod    RestMethodType = "GET"
@@ -70,6 +74,12 @@ const (
 	PostMethod   RestMethodType = "POST"
 	DeleteMethod RestMethodType = "DELETE"
 	PatchMethod  RestMethodType = "PATCH"
+)
+
+const (
+	QueryMethod        GraphqlMethod = "query"
+	MutationMethod     GraphqlMethod = "mutation"
+	SubscriptionMethod GraphqlMethod = "subscription"
 )
 
 const (
@@ -83,6 +93,8 @@ type Method struct {
 	Name string `json:"name,omitempty" yaml:"name,omitempty"`
 	// For REST, this specifies what type of CRUD this method is
 	Type RestMethodType `json:"type,omitempty" yaml:"type,omitempty"` // REST CRUD
+	// For Graphql, this specifies what type of operation this method is
+	GraphqlType GraphqlMethod `json:"graphqlType,omitempty" yaml:"graphqlType,omitempty"`
 }
 
 type ProtocolType string
@@ -94,6 +106,7 @@ const (
 	Mongo       ProtocolType = "mongo"
 	JsonrpcWS   ProtocolType = "jsonrpc-ws"
 	JsonrpcHttp ProtocolType = "jsonrpc-http"
+	Graphql     ProtocolType = "graphql"
 )
 
 // Wrapper for gRPC service, REST path
@@ -202,6 +215,35 @@ type Value struct {
 	Cookies map[string]string `json:"cookies,omitempty" yaml:"cookies,omitempty"`
 }
 
+type GraphqlParam struct {
+	Name          string                 `json:"name,omitempty" yaml:"name,omitempty"`
+	OperationName string                 `json:"operationName,omitempty" yaml:"operationName,omitempty"`
+	Query         string                 `json:"query,omitempty" yaml:"query,omitempty"`
+	Mutation      string                 `json:"mutation,omitempty" yaml:"mutation,omitempty"`
+	Subscription  string                 `json:"subscription,omitempty" yaml:"subscription,omitempty"`
+	Variables     map[string]interface{} `json:"variables,omitempty" yaml:"variables,omitempty"`
+}
+
+// GraphQL requests
+type GraphqlRequests struct {
+	Headers  map[string]string `json:"headers,omitempty" yaml:"headers,omitempty"`
+	Requests []GraphqlParam    `yaml:"requests"`
+}
+
+// GraphqlRequest represents the payload for a Graphql request.
+type GraphqlRequest struct {
+	Name  string        `json:"name,omitempty" yaml:"name,omitempty"`
+	Param *GraphqlParam `json:"param,omitempty" yaml:"param,omitempty"`
+}
+
+// GraphqlResponse represents a generic response from a Graphql server.
+type GraphqlResponse struct {
+	Data   interface{} `json:"data" yaml:"data"`
+	Errors []struct {
+		Message string `json:"message" yaml:"message"`
+	} `json:"errors,omitempty" yaml:"errors,omitempty"`
+}
+
 // Response for mock service
 type Response struct {
 	Name   string `json:"name" yaml:"name"`
@@ -252,8 +294,10 @@ type TestRequest struct {
 	// Mongo Read options
 	MongoReadParam *MongoReadParam `json:"mongoReadParam,omitempty" yaml:"mongoReadParam,omitempty"`
 	// Mongo Update options
-	MongoUpdateParam *MongoUpdateParam      `json:"mongoUpdateParam,omitempty" yaml:"mongoUpdateParam,omitempty"`
-	Vars             map[string]interface{} `json:"vars,omitempty" yaml:"vars,omitempty"`
+	MongoUpdateParam *MongoUpdateParam `json:"mongoUpdateParam,omitempty" yaml:"mongoUpdateParam,omitempty"`
+	// Graphql related
+	GraphqlParam *GraphqlParam          `json:"graphqlParam,omitempty" yaml:"graphqlParam,omitempty"`
+	Vars         map[string]interface{} `json:"vars,omitempty" yaml:"vars,omitempty"`
 	// Response properties (for POST only) to use in CRUD scenario path chaining
 	ResponseProps map[string]*openapi3.SchemaRef `json:"-" yaml:"-"`
 }
