@@ -10,8 +10,11 @@ import (
 	"fmt"
 	"io"
 	"mime/multipart"
+	"net"
 	"net/http"
 	"net/url"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/letsramp/client-go/lcm"
@@ -24,35 +27,6 @@ const (
 	maxRetries    = 5
 	retryInterval = 5 * time.Second
 )
-
-// Client represents an interface for interacting with Skyramp.
-type Client interface {
-	// InstallWorker installs the worker in the client's environment.
-	// It returns an error if the worker installation fails.
-	InstallWorker() error
-
-	// UninstallWorker uninstalls the worker in the client's environment.
-	// It returns an error if the worker uninstallation fails.
-	UninstallWorker() error
-
-	// TesterStart starts the test in the client's environment.
-	// It takes the test scenario, test name, global variables, and global headers as parameters.
-	// It returns an error if the test fails to start.
-	TesterStart(scenario []*Scenario, testName string, globalVars map[string]interface{}, globalHeaders map[string]string) (*types.TestStatusResponse, error)
-
-	// MockerApply applies the mock in the client's environment.
-	// It takes the response values and traffic configuration as parameters.
-	// It returns an error if the mock fails to apply.
-	MockerApply(response []*ResponseValue, trafficConfig *types.TrafficConfig) error
-
-	// TestStatus returns the status of the test in the client's environment.
-	// It returns the test status response.
-	TestStatus() *types.TestStatusResponse
-
-	// SetWorkerImage overrides the default worker image.
-	// It takes the image and tag as parameters.
-	SetWorkerImage(image, tag string)
-}
 
 // DockerClient represents a client configuration for interacting with Docker.
 type DockerClient struct {
@@ -70,18 +44,48 @@ type DockerClient struct {
 
 	// WorkerImageTag is the tag associated with the worker image.
 	WorkerImageTag string
+
+	// TestConfig is the test configuration for the client.
+	TestConfig *TestConfig
 }
 
 // NewDockerClient creates a new Docker client.
 // It takes the address, target network name, and host port as parameters.
-func NewDockerClient(address, targetNetworkName string, hostPort int) *DockerClient {
+func NewDockerClient(address, targetNetworkName string, testConfig *TestConfig) (*DockerClient, error) {
+	var workerAddress string
+	var workerPort int
+
+	if testConfig == nil {
+		return nil, fmt.Errorf("testConfig is required for DockerClient")
+	}
+	if strings.Contains(address, ":") {
+		// address is in the format host:port
+		var err error
+		workerAddress = address
+		var portStr string
+		_, portStr, err = net.SplitHostPort(address)
+		if err != nil {
+			return nil, fmt.Errorf("Invalid worker address: [%s] %v", address, err)
+		}
+
+		workerPort, err = strconv.Atoi(portStr)
+		if err != nil {
+			return nil, fmt.Errorf("Invalid port number %s: %v", portStr, err)
+		}
+	} else {
+		// address is in the format host
+		workerPort = types.WorkerManagementPort
+		workerAddress = fmt.Sprintf("%s:%d", address, workerPort)
+	}
+
 	return &DockerClient{
-		Address:         address,
+		Address:         workerAddress,
 		NetworkName:     targetNetworkName,
-		HostPort:        hostPort,
+		HostPort:        workerPort,
 		WorkerImageRepo: types.SkyrampWorkerImage,
 		WorkerImageTag:  types.SkyrampWorkerImageTag,
-	}
+		TestConfig:      testConfig,
+	}, nil
 }
 
 // InstallWorker installs the worker in the docker environment.
@@ -94,6 +98,13 @@ func (c *DockerClient) InstallWorker() error {
 // It returns an error if the worker uninstallation fails.
 func (c *DockerClient) UninstallWorker() error {
 	return lcm.RemoveSkyrampWorkerInDocker(types.WorkerContainerName)
+}
+
+func (c *DockerClient) Cleanup() {
+	if c.TestConfig.DeployWorker {
+		_ = c.UninstallWorker()
+		time.Sleep(DefaultDeployTime)
+	}
 }
 
 // SetWorkerImage overrides the default worker image.
@@ -157,12 +168,13 @@ func (c *DockerClient) TesterStart(
 	if err = json.Unmarshal(body, &response); err != nil {
 		return nil, fmt.Errorf("failed to parse response in worker %w", err)
 	}
+	testId := response.TestID
 
 	if resp.StatusCode != http.StatusAccepted {
 		return nil, fmt.Errorf("worker rejected tester start %v", response.Error)
 	}
 
-	responseStatus := c.TestStatus()
+	responseStatus := c.TestStatus(testId)
 	if responseStatus.Status == types.TesterFailed {
 		return nil, fmt.Errorf("tester failed: %s", responseStatus.Error)
 	}
@@ -267,14 +279,14 @@ func (c *DockerClient) MockerApply(response []*ResponseValue, trafficConfig *typ
 
 // TestStatus returns the status of the test in the docker environment.
 // It returns the test status response.
-func (c *DockerClient) TestStatus() *types.TestStatusResponse {
+func (c *DockerClient) TestStatus(testId string) *types.TestStatusResponse {
 	var testStatus *types.TestStatusResponse
 	deadline := time.Now().Add(types.WorkerWaitTime)
 retry:
 	for retries := 0; time.Now().Before(deadline) && retries < maxRetries; retries++ {
 		var status int
 		var err error
-		testStatus, status, err = c.GetTesterStatus()
+		testStatus, status, err = c.GetTesterStatus(testId)
 		if err != nil {
 			testStatus = &types.TestStatusResponse{
 				Status: types.TesterFailed,
@@ -302,15 +314,14 @@ retry:
 		default:
 			time.Sleep(retryInterval)
 		}
-
 	}
 	return testStatus
 }
 
 // GetTesterStatus returns the status of the test in the docker environment.
 // It returns the test status response, status code, and error.
-func (c *DockerClient) GetTesterStatus() (*types.TestStatusResponse, int, error) {
-	endpoint := getTestEndpointForStandalone(c.Address)
+func (c *DockerClient) GetTesterStatus(testId string) (*types.TestStatusResponse, int, error) {
+	endpoint := getTestStatusEndpointForStandalone(c.Address, testId)
 
 	resp, err := http.Get(endpoint)
 	if err != nil {
@@ -331,6 +342,10 @@ func (c *DockerClient) GetTesterStatus() (*types.TestStatusResponse, int, error)
 	}
 
 	return &response, resp.StatusCode, nil
+}
+
+func (c *DockerClient) GetTestConfig() *TestConfig {
+	return c.TestConfig
 }
 
 // in a loop continuously wait until `readyz` endpoint is ready
@@ -369,6 +384,9 @@ func getReadyzEndpoint(address string) string {
 	return fmt.Sprintf("http://%s/%s", address, types.WorkerReadyzPath)
 }
 
+func getTestStatusEndpointForStandalone(address, testerId string) string {
+	return fmt.Sprintf("http://%s/%s/%s", address, types.WorkerTestPath, testerId)
+}
 func getTestEndpointForStandalone(address string) string {
 	return fmt.Sprintf("http://%s/%s", address, types.WorkerTestPath)
 }

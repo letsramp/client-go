@@ -65,6 +65,11 @@ func NewRequest(name string, endpointDesc *types.EndpointDescription, methodName
 	}
 }
 
+func (r *Request) SetGraphqlQuery(query *types.GraphqlParam) error {
+	r.TestRequest.GraphqlParam = query
+	return nil
+}
+
 func (r *Request) SetPythonFunction(pythonFunction, pythonPath string) error {
 	if r.TestRequest.Value == nil {
 		r.TestRequest.Value = &types.Value{}
@@ -176,7 +181,7 @@ func generateTesterFileInfo(tester *types.MockDescription) (map[string][]byte, e
 	var loadFile = func(protocol types.ProtocolType, path string) error {
 		if (protocol == types.Grpc || protocol == types.Thrift) && path != "" {
 			if _, ok := files[path]; ok {
-				log.Infof("same file is already loded")
+				log.Infof("same file is already loaded")
 				return nil
 			}
 
