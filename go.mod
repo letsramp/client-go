@@ -3,7 +3,7 @@ module github.com/letsramp/client-go
 go 1.22.6
 
 require (
-	github.com/docker/docker v27.2.1+incompatible
+	github.com/docker/docker v27.3.1+incompatible
 	github.com/docker/go-connections v0.5.0
 	github.com/getkin/kin-openapi v0.127.0
 	github.com/sirupsen/logrus v1.9.3
