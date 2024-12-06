@@ -329,6 +329,8 @@ type TestScenario struct {
 	Headers map[string]string `json:"headers,omitempty" yaml:"headers,omitempty"`
 	// scenario level cookies
 	Cookies map[string]string `json:"cookies,omitempty" yaml:"cookies,omitempty"`
+	// scenario level labels
+	Labels map[string]string `json:"labels,omitempty" yaml:"labels,omitempty"`
 	// For iteration
 	With   []map[string]interface{} `json:"with,omitempty" yaml:"with,omitempty"`
 	Steps  []*TestStep              `json:"steps" yaml:"steps"`
@@ -526,6 +528,7 @@ type TestStatusResponse struct {
 	Error     string               `json:"error,omitempty" yaml:"error,omitempty" bson:"error,omitempty"`
 	Message   string               `json:"message,omitempty" yaml:"message,omitempty" bson:"message,omitempty"`
 	TestName  string               `json:"test,omitempty" yaml:"test,omitempty" bson:"test,omitempty"`
+	Labels    map[string]string    `json:"labels,omitempty" yaml:"labels,omitempty" bson:"labels,omitempty"`
 	Results   []*TestResult        `json:"results,omitempty" yaml:"results,omitempty" bson:"results,omitempty"`
 	Stats     map[string]*TestStat `json:"stats,omitempty" yaml:"stats,omitempty" bson:"stats,omitempty"`
 	Timestamp time.Time            `json:"timestamp" yaml:"timestamp" bson:"timestamp"`
