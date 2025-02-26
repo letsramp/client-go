@@ -14,6 +14,7 @@ const (
 	DefaultWorkerConfigDirPath = "/etc/skyramp"
 	WorkerManagementPort       = 35142
 	WorkerContainerName        = "skyramp-worker"
+	WorkerSVCName              = WorkerContainerName
 
 	WorkerReadyzPath     = "readyz"
 	WorkerTestPath       = "skyramp/test"
