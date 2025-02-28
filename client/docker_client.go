@@ -4,15 +4,10 @@
 package client
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
-	"mime/multipart"
 	"net"
 	"net/http"
-	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -30,8 +25,7 @@ const (
 
 // DockerClient represents a client configuration for interacting with Docker.
 type DockerClient struct {
-	// Address is the Skyramp worker's daemon address.
-	Address string
+	ClientBase
 
 	// NetworkName is the name of the Docker network where the Skyramp worker gets installed.
 	NetworkName string
@@ -78,14 +72,16 @@ func NewDockerClient(address, targetNetworkName string, testConfig *TestConfig) 
 		workerAddress = fmt.Sprintf("%s:%d", address, workerPort)
 	}
 
-	return &DockerClient{
-		Address:         workerAddress,
+	ret := &DockerClient{
 		NetworkName:     targetNetworkName,
 		HostPort:        workerPort,
 		WorkerImageRepo: types.SkyrampWorkerImage,
 		WorkerImageTag:  types.SkyrampWorkerImageTag,
 		TestConfig:      testConfig,
-	}, nil
+	}
+
+	ret.address = workerAddress
+	return ret, nil
 }
 
 // InstallWorker installs the worker in the docker environment.
@@ -114,135 +110,16 @@ func (c *DockerClient) SetWorkerImage(image, tag string) {
 	c.WorkerImageTag = tag
 }
 
-// TesterStart starts the test in the docker environment.
-// It takes the test scenario, test name, global variables, and global headers as parameters.
-// It returns an error if the test fails to start.
-func (c *DockerClient) TesterStart(
-	scenario []*Scenario,
-	testName string,
-	globalVars map[string]interface{},
-	globalHeaders map[string]string,
-) (*types.TestStatusResponse, error) {
-	testRequest, err := generateTestPostRequest(scenario, c.Address, testName)
-	testRequest.Description.Test.GlobalHeaders = globalHeaders
-	testRequest.Description.Test.GlobalVars = globalVars
-	if err != nil {
-		return nil, fmt.Errorf("failed to generate test request: %w", err)
-	}
-
-	endpoint := getTestEndpointForStandalone(c.Address)
-
-	requestByte, err := json.Marshal(testRequest)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal test request: %w", err)
-	}
-
-	log.Infof("request %+v", testRequest)
-	log.Infof("requestByte %s", string(requestByte))
-
-	request, err := http.NewRequest(http.MethodPost, endpoint, bytes.NewBuffer(requestByte))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create HTTP request for test: %w", err)
-	}
-
-	request.Header.Add("Content-Type", "application/json")
-
-	client := http.Client{}
-
-	resp, err := client.Do(request)
-	if err != nil {
-		log.Errorf("failed to start tests: %v", err)
-		if urlErr, ok := err.(*url.Error); ok {
-			return nil, fmt.Errorf("URL-related error occurred while starting test: %w", urlErr)
-		}
-		return nil, fmt.Errorf("failed to start tester: %w", err)
-	}
-
-	body, err := io.ReadAll(resp.Body)
-	defer resp.Body.Close()
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response from worker: %w", err)
-	}
-
-	var response *types.TestStatusResponse
-	if err = json.Unmarshal(body, &response); err != nil {
-		return nil, fmt.Errorf("failed to parse response in worker %w", err)
-	}
-	testId := response.TestID
-
-	if resp.StatusCode != http.StatusAccepted {
-		return nil, fmt.Errorf("worker rejected tester start %v", response.Error)
-	}
-
-	responseStatus := c.TestStatus(testId)
-	if responseStatus.Status == types.TesterFailed {
-		return nil, fmt.Errorf("tester failed: %s", responseStatus.Error)
-	}
-	return responseStatus, nil
-}
-
 func (c *DockerClient) MockerApply(response []*ResponseValue, trafficConfig *types.TrafficConfig) error {
-	mockDescription, formMap, err := generateMockPostData("", c.Address, response, trafficConfig)
+	mockDescription, err := c.MockerApplyCommon(response, trafficConfig)
 	if err != nil {
-		return fmt.Errorf("failed to generate mock post data: %w", err)
-	}
-
-	body := &bytes.Buffer{}
-	writer := multipart.NewWriter(body)
-
-	if len(formMap) != 0 {
-		for formName, fileNameMap := range formMap {
-			for fileName, fileContent := range fileNameMap {
-				part, err := writer.CreateFormFile(formName, fileName)
-				if err != nil {
-					return err
-				}
-				_, err = io.WriteString(part, fileContent)
-				if err != nil {
-					return err
-				}
-			}
-		}
-	}
-
-	writer.Close()
-
-	mockEndpoint := getMockEndpointForStandalone(c.Address)
-	request, err := http.NewRequest(http.MethodPut, mockEndpoint, body)
-	if err != nil {
-		return fmt.Errorf("failed to generate PUT HTTP request for mocks: %w", err)
-	}
-
-	request.Header.Add("Content-Type", writer.FormDataContentType())
-
-	client := &http.Client{
-		Timeout: 2 * time.Second,
-	}
-	resp, err := client.Do(request)
-	if err != nil {
-		if urlErr, ok := err.(*url.Error); ok {
-			return fmt.Errorf("URL-related error occurred while sending request to worker: %w", urlErr)
-		}
-		return fmt.Errorf("failed to send request to worker: %w", err)
-	} else {
-		if resp.StatusCode != http.StatusAccepted {
-			log.WithField("status", resp.StatusCode).Debug("worker responded with unexpected status code")
-
-			bodyBytes, respErr := io.ReadAll(resp.Body)
-			if respErr != nil {
-				return fmt.Errorf("failed to parse error from Skyramp worker: %w", respErr)
-			} else if len(bodyBytes) == 0 {
-				return fmt.Errorf("failed to apply mock")
-			}
-
-			return fmt.Errorf("failed to apply mock on Skyramp worker: %s", string(bodyBytes))
-		}
+		return err
 	}
 
 	// if standalone container, restart with new ports open
 	dockerLcm, err := lcm.NewDockerLCM()
 	if err == nil {
-		worker, err := dockerLcm.FindContainerByBoundAddress(c.Address)
+		worker, err := dockerLcm.FindContainerByBoundAddress(c.address)
 		// possibly, standalone process, not docker container
 		if err != nil {
 			log.Infof("apply succeeded, please restart the worker")
@@ -273,75 +150,8 @@ func (c *DockerClient) MockerApply(response []*ResponseValue, trafficConfig *typ
 		return nil
 	}
 
-	waitForWorkerToBeReady(c.Address, "Applying mock configuration")
+	waitForWorkerToBeReady(c.address, "Applying mock configuration")
 	return nil
-}
-
-// TestStatus returns the status of the test in the docker environment.
-// It returns the test status response.
-func (c *DockerClient) TestStatus(testId string) *types.TestStatusResponse {
-	var testStatus *types.TestStatusResponse
-	deadline := time.Now().Add(types.WorkerWaitTime)
-retry:
-	for retries := 0; time.Now().Before(deadline) && retries < maxRetries; retries++ {
-		var status int
-		var err error
-		testStatus, status, err = c.GetTesterStatus(testId)
-		if err != nil {
-			testStatus = &types.TestStatusResponse{
-				Status: types.TesterFailed,
-				Error:  fmt.Errorf("failed to parse response from worker: %w", err).Error(),
-			}
-			break
-		}
-
-		if status != http.StatusOK {
-			testStatus = &types.TestStatusResponse{
-				Status: types.TesterFailed,
-				Error:  "No test status available",
-			}
-			break
-		}
-
-		switch testStatus.Status {
-		case types.TesterFailed:
-			break retry
-		case types.TesterStopped:
-			testStatus.Message = fmt.Sprintf("Test stopped: %s", testStatus.Message)
-			break retry
-		case types.TesterFinished:
-			break retry
-		default:
-			time.Sleep(retryInterval)
-		}
-	}
-	return testStatus
-}
-
-// GetTesterStatus returns the status of the test in the docker environment.
-// It returns the test status response, status code, and error.
-func (c *DockerClient) GetTesterStatus(testId string) (*types.TestStatusResponse, int, error) {
-	endpoint := getTestStatusEndpointForStandalone(c.Address, testId)
-
-	resp, err := http.Get(endpoint)
-	if err != nil {
-		log.Errorf("failed to retrieve test status: %v", err)
-		return nil, 0, fmt.Errorf("failed to retrieve test status: %w", err)
-	}
-
-	body, err := io.ReadAll(resp.Body)
-	defer resp.Body.Close()
-	if err != nil {
-		log.Errorf("failed to read response from worker: %v", err)
-		return nil, 0, fmt.Errorf("failed to read response from worker: %v", err)
-	}
-
-	var response types.TestStatusResponse
-	if err = json.Unmarshal(body, &response); err != nil {
-		return nil, 0, fmt.Errorf("failed to read response from worker: %v", err)
-	}
-
-	return &response, resp.StatusCode, nil
 }
 
 func (c *DockerClient) GetTestConfig() *TestConfig {
@@ -376,17 +186,7 @@ func waitForWorkerToBeReady(address, msg string) {
 		}
 	}
 }
-func getMockEndpointForStandalone(address string) string {
-	return fmt.Sprintf("http://%s/%s", address, types.WorkerMockConfigPath)
-}
 
 func getReadyzEndpoint(address string) string {
 	return fmt.Sprintf("http://%s/%s", address, types.WorkerReadyzPath)
-}
-
-func getTestStatusEndpointForStandalone(address, testerId string) string {
-	return fmt.Sprintf("http://%s/%s/%s", address, types.WorkerTestPath, testerId)
-}
-func getTestEndpointForStandalone(address string) string {
-	return fmt.Sprintf("http://%s/%s", address, types.WorkerTestPath)
 }
