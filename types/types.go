@@ -288,6 +288,9 @@ type TestRequest struct {
 	EndpointName string `json:"endpointName,omitempty" yaml:"endpointName,omitempty"`
 	// method name
 	MethodName string   `json:"methodName" yaml:"methodName"`
+	// insecure
+	Insecure bool `json:"insecure,omitempty" yaml:"insecure,omitempty"`
+    // asserts
 	Asserts    []string `json:"asserts,omitempty" yaml:"asserts,omitempty"`
 	// DB related
 	DBParam *DBParam `json:"dbParam,omitempty" yaml:"dbParam,omitempty"`
