@@ -290,8 +290,8 @@ func findContainerByName(containerName string) (*dockerTypes.Container, error) {
 	return nil, fmt.Errorf("container %s not found", containerName)
 }
 
-func (d *DockerLCM) FindNetworkByName(networkName string) (*dockerTypes.NetworkResource, error) {
-	networks, err := d.client.NetworkList(context.Background(), dockerTypes.NetworkListOptions{})
+func (d *DockerLCM) FindNetworkByName(networkName string) (*network.Inspect, error) {
+	networks, err := d.client.NetworkList(context.Background(), network.ListOptions{})
 	if err != nil {
 		return nil, err
 	}
@@ -308,7 +308,7 @@ func (d *DockerLCM) FindNetworkByName(networkName string) (*dockerTypes.NetworkR
 		return nil, fmt.Errorf("failed to find network %s", networkID)
 	}
 
-	network, err := d.client.NetworkInspect(context.Background(), networkID, dockerTypes.NetworkInspectOptions{})
+	network, err := d.client.NetworkInspect(context.Background(), networkID, network.InspectOptions{})
 	if err != nil {
 		return nil, err
 	}
