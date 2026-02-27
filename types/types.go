@@ -27,7 +27,7 @@ type Service struct {
 	ServiceAlias string `json:"alias,omitempty" yaml:"alias,omitempty"`
 	// If encryption is required
 	Secure bool `json:"secure,omitempty" yaml:"secure,omitempty"`
-	// Protocol that is associated with this service, namely gRPC, REST, Thrift or Mongo
+	// Protocol that is associated with this service, namely gRPC, REST or Mongo
 	Protocol ProtocolType `json:"protocol,omitempty" yaml:"protocol,omitempty"`
 	// Endpoints that belong to this service
 	Endpoints []string `json:"endpoints,omitempty" yaml:"endpoints,omitempty"`
@@ -102,7 +102,6 @@ type ProtocolType string
 const (
 	Rest        ProtocolType = "rest"
 	Grpc        ProtocolType = "grpc"
-	Thrift      ProtocolType = "thrift"
 	Mongo       ProtocolType = "mongo"
 	JsonrpcWS   ProtocolType = "jsonrpc-ws"
 	JsonrpcHttp ProtocolType = "jsonrpc-http"
@@ -203,7 +202,7 @@ type Value struct {
 	Python string `json:"python,omitempty" yaml:"python,omitempty"`
 	// Python script path - it should be relative to CWD or Project root, or absolute
 	PythonPath string `json:"pythonPath,omitempty" yaml:"pythonPath,omitempty"`
-	// primitive value for thrift
+	// primitive value
 	Value interface{} `json:"value,omitempty" yaml:"value,omitempty"`
 	// yamlfile
 	YamlPath string `json:"yamlPath,omitempty" yaml:"yamlPath,omitempty"`
@@ -350,7 +349,7 @@ type TestPattern struct {
 	ScenarioName string `json:"scenarioName,omitempty" yaml:"scenarioName,omitempty"`
 	// Shell commands
 	Command string `json:"command,omitempty" yaml:"command,omitempty"`
-	// API requests (REST, gRPC, Thrift) or db read / write
+	// API requests (REST, gRPC) or db read / write
 	RequestName string `json:"requestName,omitempty" yaml:"requestName,omitempty"`
 
 	Start    interface{}     `json:"startAt,omitempty" yaml:"startAt,omitempty"`
