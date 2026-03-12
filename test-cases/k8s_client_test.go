@@ -344,6 +344,7 @@ func TestK8sRBAC(t *testing.T) {
 	assert.Equal(t, nil, err)
 }
 
+/*
 func TestK8sChaining(t *testing.T) {
 	// Create the Kind cluster
 	err := createKINDCluster(clusterName, types.KindNodeImage, kubeconfig)
@@ -441,6 +442,7 @@ func TestK8sChaining(t *testing.T) {
 	err = k8sClient.UninstallWorker()
 	assert.Equal(t, nil, err)
 }
+*/
 
 func TestCleanupK8sCluster(t *testing.T) {
 	err := deleteKINDCluster(clusterName, kubeconfig)

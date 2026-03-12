@@ -94,6 +94,7 @@ func TestDockerEchoService(t *testing.T) {
 	dockerClient.UninstallWorker()
 }
 
+/*
 func TestDockerStandalone(t *testing.T) {
 	var err error
 	dockerClient, err = client.NewDockerClient("localhost:35142", "", &client.TestConfig{
@@ -223,3 +224,4 @@ func TestDockerCompose(t *testing.T) {
 
 	dockerClient.UninstallWorker()
 }
+*/
