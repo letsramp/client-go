@@ -27,7 +27,7 @@ type Service struct {
 	ServiceAlias string `json:"alias,omitempty" yaml:"alias,omitempty"`
 	// If encryption is required
 	Secure bool `json:"secure,omitempty" yaml:"secure,omitempty"`
-	// Protocol that is associated with this service, namely gRPC, REST, Thrift or Mongo
+	// Protocol that is associated with this service, namely gRPC, REST or Mongo
 	Protocol ProtocolType `json:"protocol,omitempty" yaml:"protocol,omitempty"`
 	// Endpoints that belong to this service
 	Endpoints []string `json:"endpoints,omitempty" yaml:"endpoints,omitempty"`
@@ -102,7 +102,6 @@ type ProtocolType string
 const (
 	Rest        ProtocolType = "rest"
 	Grpc        ProtocolType = "grpc"
-	Thrift      ProtocolType = "thrift"
 	Mongo       ProtocolType = "mongo"
 	JsonrpcWS   ProtocolType = "jsonrpc-ws"
 	JsonrpcHttp ProtocolType = "jsonrpc-http"
@@ -203,7 +202,7 @@ type Value struct {
 	Python string `json:"python,omitempty" yaml:"python,omitempty"`
 	// Python script path - it should be relative to CWD or Project root, or absolute
 	PythonPath string `json:"pythonPath,omitempty" yaml:"pythonPath,omitempty"`
-	// primitive value for thrift
+	// primitive value
 	Value interface{} `json:"value,omitempty" yaml:"value,omitempty"`
 	// yamlfile
 	YamlPath string `json:"yamlPath,omitempty" yaml:"yamlPath,omitempty"`
@@ -350,7 +349,7 @@ type TestPattern struct {
 	ScenarioName string `json:"scenarioName,omitempty" yaml:"scenarioName,omitempty"`
 	// Shell commands
 	Command string `json:"command,omitempty" yaml:"command,omitempty"`
-	// API requests (REST, gRPC, Thrift) or db read / write
+	// API requests (REST, gRPC) or db read / write
 	RequestName string `json:"requestName,omitempty" yaml:"requestName,omitempty"`
 
 	Start    interface{}     `json:"startAt,omitempty" yaml:"startAt,omitempty"`
@@ -556,9 +555,10 @@ type TestStat struct {
 	MaxLatency   *time.Duration `json:",omitempty" yaml:",omitempty" bson:"MaxLatency"`
 	MinLatency   *time.Duration `json:",omitempty" yaml:",omitempty" bson:"MinLatency"`
 
-	L99thLatency *time.Duration `json:",omitempty" yaml:",omitempty" bson:"L99thLatency"`
-	L95thLatency *time.Duration `json:",omitempty" yaml:",omitempty" bson:"L95thLatency"`
-	L90thLatency *time.Duration `json:",omitempty" yaml:",omitempty" bson:"L90thLatency"`
+	L99thLatency    *time.Duration `json:",omitempty" yaml:",omitempty" bson:"L99thLatency"`
+	L95thLatency    *time.Duration `json:",omitempty" yaml:",omitempty" bson:"L95thLatency"`
+	L90thLatency    *time.Duration `json:",omitempty" yaml:",omitempty" bson:"L90thLatency"`
+	MedianLatency   *time.Duration `json:",omitempty" yaml:",omitempty" bson:"MedianLatency"`
 
 	// This is for computing 90th, 95th, 99th percentile
 	Raw []time.Duration `json:"-" yaml:"-" bson:"-"`

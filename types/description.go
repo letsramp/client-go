@@ -29,7 +29,7 @@ type TestDescription struct {
 	Test *Test `json:"test,omitempty" yaml:"test,omitempty"`
 	// test scenario definitions
 	Scenarios []*TestScenario `json:"scenarios,omitempty" yaml:"scenarios,omitempty"`
-	// API request definitions (REST, gRPC, Thrift)
+	// API request definitions (REST, gRPC)
 	Requests []*TestRequest `json:"requests,omitempty" yaml:"requests,omitempty"`
 	// Shell command definitions
 	Commands []*TestCommand `json:"commands,omitempty" yaml:"commands,omitempty"`
