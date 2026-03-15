@@ -179,7 +179,7 @@ func generateTesterFileInfo(tester *types.MockDescription) (map[string][]byte, e
 	files := make(map[string][]byte)
 
 	var loadFile = func(protocol types.ProtocolType, path string) error {
-		if (protocol == types.Grpc || protocol == types.Thrift) && path != "" {
+		if (protocol == types.Grpc) && path != "" {
 			if _, ok := files[path]; ok {
 				log.Infof("same file is already loaded")
 				return nil
