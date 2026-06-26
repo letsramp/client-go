@@ -286,11 +286,11 @@ type TestRequest struct {
 	// endpoint name
 	EndpointName string `json:"endpointName,omitempty" yaml:"endpointName,omitempty"`
 	// method name
-	MethodName string   `json:"methodName" yaml:"methodName"`
+	MethodName string `json:"methodName" yaml:"methodName"`
 	// insecure
 	Insecure bool `json:"insecure,omitempty" yaml:"insecure,omitempty"`
-    // asserts
-	Asserts    []string `json:"asserts,omitempty" yaml:"asserts,omitempty"`
+	// asserts
+	Asserts []string `json:"asserts,omitempty" yaml:"asserts,omitempty"`
 	// DB related
 	DBParam *DBParam `json:"dbParam,omitempty" yaml:"dbParam,omitempty"`
 	// Mongo Read options
@@ -555,10 +555,10 @@ type TestStat struct {
 	MaxLatency   *time.Duration `json:",omitempty" yaml:",omitempty" bson:"MaxLatency"`
 	MinLatency   *time.Duration `json:",omitempty" yaml:",omitempty" bson:"MinLatency"`
 
-	L99thLatency    *time.Duration `json:",omitempty" yaml:",omitempty" bson:"L99thLatency"`
-	L95thLatency    *time.Duration `json:",omitempty" yaml:",omitempty" bson:"L95thLatency"`
-	L90thLatency    *time.Duration `json:",omitempty" yaml:",omitempty" bson:"L90thLatency"`
-	MedianLatency   *time.Duration `json:",omitempty" yaml:",omitempty" bson:"MedianLatency"`
+	L99thLatency  *time.Duration `json:",omitempty" yaml:",omitempty" bson:"L99thLatency"`
+	L95thLatency  *time.Duration `json:",omitempty" yaml:",omitempty" bson:"L95thLatency"`
+	L90thLatency  *time.Duration `json:",omitempty" yaml:",omitempty" bson:"L90thLatency"`
+	MedianLatency *time.Duration `json:",omitempty" yaml:",omitempty" bson:"MedianLatency"`
 
 	// This is for computing 90th, 95th, 99th percentile
 	Raw []time.Duration `json:"-" yaml:"-" bson:"-"`
