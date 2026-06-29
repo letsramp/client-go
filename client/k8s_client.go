@@ -110,6 +110,7 @@ func (k *KubernetesClient) StartPortForward() error {
 func (k *KubernetesClient) InstallWorker() error {
 	valuesMap := make(map[string]interface{})
 	valuesMap["rbac"] = true
+	valuesMap["clusterScope"] = true
 
 	img := fmt.Sprintf("%s:%s", k.WorkerImageRepo, k.WorkerImageTag)
 	publicImg := fmt.Sprintf("%s:%s", types.SkyrampWorkerImage, types.SkyrampWorkerImageTag)
