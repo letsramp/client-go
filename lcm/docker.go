@@ -10,6 +10,7 @@ import (
 	"io"
 	"net"
 	"strconv"
+	"strings"
 	"time"
 
 	dockerTypes "github.com/docker/docker/api/types"
@@ -40,9 +41,48 @@ var (
 	DockerEngineAPIVersion = "1.44"
 )
 
+// Docker's own OSType values, as reported by /info.
+const (
+	dockerOSTypeLinux   = "linux"
+	dockerOSTypeWindows = "windows"
+
+	// windowsWorkerConfigDir is the Windows form of
+	// types.DefaultWorkerConfigDirPath, created by the image via WORKDIR.
+	windowsWorkerConfigDir = `C:\etc\skyramp`
+)
+
+// daemonOSType reports which OS the daemon runs containers for, which decides
+// in-container paths. Not runtime.GOOS: Docker Desktop on Windows in
+// Linux-container mode still runs linux containers. Falls back to linux when
+// /info is unreachable.
+//
+// Duplicated from pkg/lcm.DaemonOSType because client-go is an independent
+// module; keep the two in sync.
+func daemonOSType(ctx context.Context, cli *docker.Client) string {
+	info, err := cli.Info(ctx)
+	if err != nil {
+		logger.Warnf("could not read daemon OSType (%v); assuming %s", err, dockerOSTypeLinux)
+		return dockerOSTypeLinux
+	}
+	if strings.EqualFold(info.OSType, dockerOSTypeWindows) {
+		return dockerOSTypeWindows
+	}
+	return dockerOSTypeLinux
+}
+
+// workerConfigDirForOSType is the in-container mount target for the worker's
+// resource directory. types.DefaultWorkerConfigDirPath is a Unix path and is
+// also used for the Kubernetes mount, so the OS-aware form lives here.
+func workerConfigDirForOSType(osType string) string {
+	if osType == dockerOSTypeWindows {
+		return windowsWorkerConfigDir
+	}
+	return types.DefaultWorkerConfigDirPath
+}
+
 // generic docker LCM to communicate with docker API
 func NewDockerLCM() (*DockerLCM, error) {
-	client, err := docker.NewClientWithOpts(docker.WithVersion(DockerEngineAPIVersion))
+	client, err := docker.NewClientWithOpts(docker.WithVersion(DockerEngineAPIVersion), docker.FromEnv)
 	if err != nil {
 		logger.Errorf("failed to create docker client: %v", err)
 		return nil, fmt.Errorf("failed to create docker client: %w", err)
@@ -141,12 +181,14 @@ func RunSkyrampWorkerInDockerNetwork(image, tag string, hostPort int, targetNetw
 		}
 		out.Close()
 	}
+	workerConfigDir := workerConfigDirForOSType(daemonOSType(context.Background(), dockerLcm.client))
+
 	workerContainer, err := dockerLcm.client.ContainerCreate(
 		context.Background(),
 		&dockerContainer.Config{
 			Image: imagePath,
 			Volumes: map[string]struct{}{
-				types.DefaultWorkerConfigDirPath: {},
+				workerConfigDir: {},
 			},
 			ExposedPorts: map[nat.Port]struct{}{
 				nat.Port(containerExposedPort): {},
@@ -154,7 +196,7 @@ func RunSkyrampWorkerInDockerNetwork(image, tag string, hostPort int, targetNetw
 		},
 		&dockerContainer.HostConfig{
 			Binds: []string{
-				fmt.Sprintf("%s:%s:rw", vol.Name, types.DefaultWorkerConfigDirPath),
+				fmt.Sprintf("%s:%s:rw", vol.Name, workerConfigDir),
 			},
 			RestartPolicy: dockerContainer.RestartPolicy{
 				Name: "always",
