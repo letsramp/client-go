@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/http"
 	"strconv"
 	"strings"
 	"time"
@@ -254,14 +255,14 @@ func RunSkyrampWorkerInDockerNetwork(image, tag string, hostPort int, targetNetw
 	}
 
 	// wait for container to be ready
-	err = waitForContainerStarted(dockerLcm.client, context.Background(), workerContainer.ID)
+	err = waitForContainerStarted(dockerLcm.client, context.Background(), workerContainer.ID, hostPort)
 	if err != nil {
 		return fmt.Errorf("error occurred while waiting for container %s to start: %v", containerName, err)
 	}
 	return nil
 }
 
-func waitForContainerStarted(client *docker.Client, ctx context.Context, containerID string) error {
+func waitForContainerStarted(client *docker.Client, ctx context.Context, containerID string, hostPort int) error {
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
 
@@ -277,7 +278,7 @@ func waitForContainerStarted(client *docker.Client, ctx context.Context, contain
 			}
 
 			if status.State.Running {
-				if isContainerReady(status) {
+				if isContainerReady(status, readinessHost(client.DaemonHost()), hostPort) {
 					return nil
 				}
 			}
@@ -285,8 +286,73 @@ func waitForContainerStarted(client *docker.Client, ctx context.Context, contain
 	}
 }
 
-func isContainerReady(status dockerTypes.ContainerJSON) bool {
-	return status.State.Health != nil && status.State.Health.Status == "healthy"
+// readyzProbeClient bounds one /readyz probe. http.DefaultClient has no timeout, so a
+// daemon that blackholes packets would hold the polling goroutine until the OS TCP
+// timeout, well past the caller's own deadline.
+//
+// Explicit transport with no Proxy: the default one honours HTTP_PROXY, and this probe
+// targets a port published directly on the daemon's host. A proxy would either
+// black-hole it or answer 200 itself and be read as readiness.
+//
+// client-go is its own Go module and cannot import pkg/lcm, so this mirrors
+// pkg/lcm/docker_lcm.go's probe rather than sharing it. Keep the two in step: they answer
+// the same question about the same worker image.
+var readyzProbeClient = &http.Client{
+	Timeout:   5 * time.Second,
+	Transport: &http.Transport{Proxy: nil},
+}
+
+// isContainerReady prefers the image's own healthcheck and falls back to the worker's
+// /readyz on its published port when the image declares none.
+//
+// The fallback is what makes the lean Windows worker deployable through this client: its
+// base image ships neither PowerShell nor curl, so Dockerfile.windows has no HEALTHCHECK,
+// and "healthy or nothing" left Health nil forever and this loop waiting until the caller
+// gave up.
+//
+// host is where that published port is reachable, which is not always localhost: this
+// package builds its client with docker.FromEnv, so a DOCKER_HOST naming another machine
+// publishes the port there and a probe of 127.0.0.1 asks the wrong host.
+func isContainerReady(status dockerTypes.ContainerJSON, host string, hostPort int) bool {
+	if status.State.Health != nil {
+		return status.State.Health.Status == "healthy"
+	}
+	if hostPort <= 0 {
+		return false
+	}
+	if host == "" {
+		host = "127.0.0.1"
+	}
+	resp, err := readyzProbeClient.Get("http://" + net.JoinHostPort(host, strconv.Itoa(hostPort)) + "/readyz")
+	if err != nil {
+		return false
+	}
+	defer func() { _ = resp.Body.Close() }()
+	return resp.StatusCode == http.StatusOK
+}
+
+// readinessHost is the host a container's published port is reachable on for the daemon
+// at daemonHost. Only a daemon addressed over TCP is somewhere else; a unix socket or a
+// named pipe is this machine, and an unparseable address degrades to localhost so the
+// connection attempt reports it.
+func readinessHost(daemonHost string) string {
+	if daemonHost == "" {
+		return "127.0.0.1"
+	}
+	u, err := docker.ParseHostURL(daemonHost)
+	if err != nil {
+		return "127.0.0.1"
+	}
+	switch u.Scheme {
+	case "tcp", "http", "https":
+		if h, _, err := net.SplitHostPort(u.Host); err == nil && h != "" {
+			return h
+		}
+		if u.Host != "" {
+			return u.Host
+		}
+	}
+	return "127.0.0.1"
 }
 
 // Helper method that will bring down skyramp worker in a docker network
