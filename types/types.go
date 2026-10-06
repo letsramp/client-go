@@ -337,6 +337,14 @@ type TestScenario struct {
 	With   []map[string]interface{} `json:"with,omitempty" yaml:"with,omitempty"`
 	Steps  []*TestStep              `json:"steps" yaml:"steps"`
 	Ignore bool                     `json:"ignore,omitempty" yaml:"ignore,omitempty"`
+
+	// Parallel runs the scenario's steps concurrently rather than in order, the
+	// analogue of JMeter's Parallel Controller. Every step must be a nested
+	// scenario, and no step may carry a repeat or a break.
+	Parallel bool `json:"parallel,omitempty" yaml:"parallel,omitempty"`
+	// MaxConcurrency caps how many of a parallel scenario's branches run at
+	// once. Zero means the default of 6, matching JMeter; negative means no cap.
+	MaxConcurrency int `json:"maxConcurrency,omitempty" yaml:"maxConcurrency,omitempty"`
 }
 
 type TestRampConfig struct {
