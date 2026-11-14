@@ -11,13 +11,13 @@ import (
 	"strconv"
 	"testing"
 
-	dockerTypes "github.com/docker/docker/api/types"
+	dockerContainer "github.com/moby/moby/api/types/container"
 )
 
-func containerWithHealth(status string) dockerTypes.ContainerJSON {
-	c := dockerTypes.ContainerJSON{ContainerJSONBase: &dockerTypes.ContainerJSONBase{State: &dockerTypes.ContainerState{Running: true}}}
+func containerWithHealth(status string) dockerContainer.InspectResponse {
+	c := dockerContainer.InspectResponse{State: &dockerContainer.State{Running: true}}
 	if status != "" {
-		c.State.Health = &dockerTypes.Health{Status: status}
+		c.State.Health = &dockerContainer.Health{Status: dockerContainer.HealthStatus(status)}
 	}
 	return c
 }
