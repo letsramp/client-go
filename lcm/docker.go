@@ -10,18 +10,15 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/netip"
 	"strconv"
 	"strings"
 	"time"
 
-	dockerTypes "github.com/docker/docker/api/types"
-	dockerContainer "github.com/docker/docker/api/types/container"
-	dockerImage "github.com/docker/docker/api/types/image"
-	"github.com/docker/docker/api/types/network"
-	"github.com/docker/docker/api/types/volume"
-	docker "github.com/docker/docker/client"
-	"github.com/docker/go-connections/nat"
 	"github.com/letsramp/client-go/types"
+	dockerContainer "github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/api/types/network"
+	docker "github.com/moby/moby/client"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -31,7 +28,7 @@ type DockerLCM struct {
 	// docker client
 	client *docker.Client
 	// docker container object
-	Container *dockerTypes.ContainerJSON
+	Container *dockerContainer.InspectResponse
 	// docker network ID that the work is in
 	NetworkID string
 	// docker network name
@@ -60,12 +57,12 @@ const (
 // Duplicated from pkg/lcm.DaemonOSType because client-go is an independent
 // module; keep the two in sync.
 func daemonOSType(ctx context.Context, cli *docker.Client) string {
-	info, err := cli.Info(ctx)
+	res, err := cli.Info(ctx, docker.InfoOptions{})
 	if err != nil {
 		logger.Warnf("could not read daemon OSType (%v); assuming %s", err, dockerOSTypeLinux)
 		return dockerOSTypeLinux
 	}
-	if strings.EqualFold(info.OSType, dockerOSTypeWindows) {
+	if strings.EqualFold(res.Info.OSType, dockerOSTypeWindows) {
 		return dockerOSTypeWindows
 	}
 	return dockerOSTypeLinux
@@ -83,7 +80,7 @@ func workerConfigDirForOSType(osType string) string {
 
 // generic docker LCM to communicate with docker API
 func NewDockerLCM() (*DockerLCM, error) {
-	client, err := docker.NewClientWithOpts(docker.WithVersion(DockerEngineAPIVersion), docker.FromEnv)
+	client, err := docker.New(docker.WithAPIVersion(DockerEngineAPIVersion), docker.FromEnv)
 	if err != nil {
 		logger.Errorf("failed to create docker client: %v", err)
 		return nil, fmt.Errorf("failed to create docker client: %w", err)
@@ -96,7 +93,7 @@ func NewDockerLCM() (*DockerLCM, error) {
 
 // exposing new ports requires recreating container
 // this applies to standalone container, that does not belong to docker network
-func (d *DockerLCM) RestartWithNewPorts(container *dockerTypes.ContainerJSON, ports []int) error {
+func (d *DockerLCM) RestartWithNewPorts(container *dockerContainer.InspectResponse, ports []int) error {
 	ctx := context.Background()
 
 	// get relevant fields from original container
@@ -107,18 +104,18 @@ func (d *DockerLCM) RestartWithNewPorts(container *dockerTypes.ContainerJSON, po
 
 	// add new ports
 	if config.ExposedPorts == nil {
-		config.ExposedPorts = nat.PortSet{}
+		config.ExposedPorts = network.PortSet{}
 	}
 
 	for _, p := range ports {
-		newPort, err := nat.NewPort("tcp", strconv.Itoa(p))
-		if err != nil {
-			return err
+		newPort, ok := network.PortFrom(uint16(p), network.TCP)
+		if !ok {
+			return fmt.Errorf("invalid port %d", p)
 		}
 		config.ExposedPorts[newPort] = struct{}{}
-		hostConfig.PortBindings[newPort] = []nat.PortBinding{
+		hostConfig.PortBindings[newPort] = []network.PortBinding{
 			{
-				HostIP:   "127.0.0.1",
+				HostIP:   netip.MustParseAddr("127.0.0.1"),
 				HostPort: strconv.Itoa(p),
 			},
 		}
@@ -126,7 +123,7 @@ func (d *DockerLCM) RestartWithNewPorts(container *dockerTypes.ContainerJSON, po
 
 	// stop and remove existing container
 	logger.Infof("attempting to kill container %s", name)
-	if err := d.client.ContainerRemove(ctx, container.ID, dockerContainer.RemoveOptions{Force: true}); err != nil {
+	if _, err := d.client.ContainerRemove(ctx, container.ID, docker.ContainerRemoveOptions{Force: true}); err != nil {
 		logger.Errorf("failed to remove container %s: %v", name, err)
 		return fmt.Errorf("failed to remove container %s: %v", name, err)
 	}
@@ -136,13 +133,18 @@ func (d *DockerLCM) RestartWithNewPorts(container *dockerTypes.ContainerJSON, po
 	}
 
 	// create and run it in background
-	resp, err := d.client.ContainerCreate(ctx, config, hostConfig, networkConfig, nil, name)
+	resp, err := d.client.ContainerCreate(ctx, docker.ContainerCreateOptions{
+		Config:           config,
+		HostConfig:       hostConfig,
+		NetworkingConfig: networkConfig,
+		Name:             name,
+	})
 	if err != nil {
 		logger.Errorf("failed to create a container %s: %v", name, err)
 		return fmt.Errorf("failed to create a container %s: %w", name, err)
 	}
 
-	if err := d.client.ContainerStart(ctx, resp.ID, dockerContainer.StartOptions{}); err != nil {
+	if _, err := d.client.ContainerStart(ctx, resp.ID, docker.ContainerStartOptions{}); err != nil {
 		logger.Errorf("failed to start container %s: %v", name, err)
 		return fmt.Errorf("failed to start container %s: %v", name, err)
 	}
@@ -162,7 +164,7 @@ func RunSkyrampWorkerInDockerNetwork(image, tag string, hostPort int, targetNetw
 	}
 
 	// Create a Docker volume
-	vol, err := dockerLcm.client.VolumeCreate(context.Background(), volume.CreateOptions{
+	vol, err := dockerLcm.client.VolumeCreate(context.Background(), docker.VolumeCreateOptions{
 		Name: containerName,
 	})
 
@@ -170,9 +172,9 @@ func RunSkyrampWorkerInDockerNetwork(image, tag string, hostPort int, targetNetw
 		return fmt.Errorf("error occurred while creating volume: %v", err)
 	}
 	imagePath := fmt.Sprintf("%s:%s", image, tag)
-	_, _, err = dockerLcm.client.ImageInspectWithRaw(context.Background(), imagePath)
+	_, err = dockerLcm.client.ImageInspect(context.Background(), imagePath)
 	if err != nil {
-		out, err := dockerLcm.client.ImagePull(context.Background(), imagePath, dockerImage.PullOptions{})
+		out, err := dockerLcm.client.ImagePull(context.Background(), imagePath, docker.ImagePullOptions{})
 		if err != nil {
 			return fmt.Errorf("error occurred while pulling image %s: %v", imagePath, err)
 		}
@@ -184,41 +186,40 @@ func RunSkyrampWorkerInDockerNetwork(image, tag string, hostPort int, targetNetw
 	}
 	workerConfigDir := workerConfigDirForOSType(daemonOSType(context.Background(), dockerLcm.client))
 
-	workerContainer, err := dockerLcm.client.ContainerCreate(
-		context.Background(),
-		&dockerContainer.Config{
+	workerContainer, err := dockerLcm.client.ContainerCreate(context.Background(), docker.ContainerCreateOptions{
+		Config: &dockerContainer.Config{
 			Image: imagePath,
 			Volumes: map[string]struct{}{
 				workerConfigDir: {},
 			},
-			ExposedPorts: map[nat.Port]struct{}{
-				nat.Port(containerExposedPort): {},
+			ExposedPorts: network.PortSet{
+				network.MustParsePort(containerExposedPort): {},
 			},
 		},
-		&dockerContainer.HostConfig{
+		HostConfig: &dockerContainer.HostConfig{
 			Binds: []string{
-				fmt.Sprintf("%s:%s:rw", vol.Name, workerConfigDir),
+				fmt.Sprintf("%s:%s:rw", vol.Volume.Name, workerConfigDir),
 			},
 			RestartPolicy: dockerContainer.RestartPolicy{
 				Name: "always",
 			},
-			PortBindings: map[nat.Port][]nat.PortBinding{
-				nat.Port(containerExposedPort): {{HostPort: fmt.Sprintf("%d", hostPort)}},
+			PortBindings: network.PortMap{
+				network.MustParsePort(containerExposedPort): {{HostPort: fmt.Sprintf("%d", hostPort)}},
 			},
 		},
-		&network.NetworkingConfig{},
-		nil,
-		containerName)
+		NetworkingConfig: &network.NetworkingConfig{},
+		Name:             containerName,
+	})
 	if err != nil {
 		return fmt.Errorf("error occurred while creating container %s: %v", containerName, err)
 	}
 
-	err = dockerLcm.client.ContainerStart(context.Background(), workerContainer.ID, dockerContainer.StartOptions{})
+	_, err = dockerLcm.client.ContainerStart(context.Background(), workerContainer.ID, docker.ContainerStartOptions{})
 	if err != nil {
 		return fmt.Errorf("error occurred while starting container %s: %v", containerName, err)
 	}
 
-	containerInfo, err := dockerLcm.client.ContainerInspect(context.Background(), workerContainer.ID)
+	containerInfo, err := inspectContainer(context.Background(), dockerLcm.client, workerContainer.ID)
 	if err != nil {
 		return fmt.Errorf("error occurred while inspecting container %s: %v", containerName, err)
 	}
@@ -236,19 +237,19 @@ func RunSkyrampWorkerInDockerNetwork(image, tag string, hostPort int, targetNetw
 			break
 		}
 
-		err = dockerLcm.client.ContainerStop(context.Background(), dockerLcm.Container.ID, dockerContainer.StopOptions{})
+		_, err = dockerLcm.client.ContainerStop(context.Background(), dockerLcm.Container.ID, docker.ContainerStopOptions{})
 		if err != nil {
 			return fmt.Errorf("error occurred while stoping container %s: %v", containerName, err)
 		}
-		err = dockerLcm.client.NetworkDisconnect(context.Background(), workerNetwork.NetworkID, dockerLcm.Container.ID, true)
+		_, err = dockerLcm.client.NetworkDisconnect(context.Background(), workerNetwork.NetworkID, docker.NetworkDisconnectOptions{Container: dockerLcm.Container.ID, Force: true})
 		if err != nil {
 			return fmt.Errorf("error occurred while disconnecting network for %s container: %v", containerName, err)
 		}
-		err = dockerLcm.client.NetworkConnect(context.Background(), targetNetwork.ID, dockerLcm.Container.ID, &network.EndpointSettings{})
+		_, err = dockerLcm.client.NetworkConnect(context.Background(), targetNetwork.ID, docker.NetworkConnectOptions{Container: dockerLcm.Container.ID, EndpointConfig: &network.EndpointSettings{}})
 		if err != nil {
 			return fmt.Errorf("error occurred while attaching container %s to %s: %v", containerName, targetNetwork.ID, err)
 		}
-		err = dockerLcm.client.ContainerStart(context.Background(), dockerLcm.Container.ID, dockerContainer.StartOptions{})
+		_, err = dockerLcm.client.ContainerStart(context.Background(), dockerLcm.Container.ID, docker.ContainerStartOptions{})
 		if err != nil {
 			return fmt.Errorf("error occurred while starting container %s: %v", containerName, err)
 		}
@@ -272,7 +273,7 @@ func waitForContainerStarted(client *docker.Client, ctx context.Context, contain
 			return nil // Context done, no error
 		case <-ticker.C:
 			// Check container status
-			status, err := client.ContainerInspect(ctx, containerID)
+			status, err := inspectContainer(ctx, client, containerID)
 			if err != nil {
 				return fmt.Errorf("failed to inspect container %s: %w", containerID, err)
 			}
@@ -313,7 +314,7 @@ var readyzProbeClient = &http.Client{
 // host is where that published port is reachable, which is not always localhost: this
 // package builds its client with docker.FromEnv, so a DOCKER_HOST naming another machine
 // publishes the port there and a probe of 127.0.0.1 asks the wrong host.
-func isContainerReady(status dockerTypes.ContainerJSON, host string, hostPort int) bool {
+func isContainerReady(status dockerContainer.InspectResponse, host string, hostPort int) bool {
 	if status.State.Health != nil {
 		return status.State.Health.Status == "healthy"
 	}
@@ -368,10 +369,10 @@ func RemoveSkyrampWorkerInDocker(containerName string) error {
 	}
 
 	// delete container
-	_ = dockerLcm.client.ContainerRemove(context.Background(), workerContainer.ID, dockerContainer.RemoveOptions{Force: true})
+	_, _ = dockerLcm.client.ContainerRemove(context.Background(), workerContainer.ID, docker.ContainerRemoveOptions{Force: true})
 
 	// delete docker volume
-	err = dockerLcm.client.VolumeRemove(context.Background(), containerName, true)
+	_, err = dockerLcm.client.VolumeRemove(context.Background(), containerName, docker.VolumeRemoveOptions{Force: true})
 	if err != nil {
 		return fmt.Errorf("error occurred while removing volume %s: %v", containerName, err)
 	}
@@ -379,17 +380,17 @@ func RemoveSkyrampWorkerInDocker(containerName string) error {
 	return nil
 }
 
-func findContainerByName(containerName string) (*dockerTypes.Container, error) {
+func findContainerByName(containerName string) (*dockerContainer.Summary, error) {
 	dockerLcm, err := NewDockerLCM()
 	if err != nil {
 		return nil, err
 	}
 
-	containers, err := dockerLcm.client.ContainerList(context.Background(), dockerContainer.ListOptions{All: true})
+	containers, err := dockerLcm.client.ContainerList(context.Background(), docker.ContainerListOptions{All: true})
 	if err != nil {
 		return nil, err
 	}
-	for _, c := range containers {
+	for _, c := range containers.Items {
 		if c.Names[0] == "/"+containerName {
 			return &c, nil
 		}
@@ -399,13 +400,13 @@ func findContainerByName(containerName string) (*dockerTypes.Container, error) {
 }
 
 func (d *DockerLCM) FindNetworkByName(networkName string) (*network.Inspect, error) {
-	networks, err := d.client.NetworkList(context.Background(), network.ListOptions{})
+	networks, err := d.client.NetworkList(context.Background(), docker.NetworkListOptions{})
 	if err != nil {
 		return nil, err
 	}
 
 	var networkID string
-	for _, n := range networks {
+	for _, n := range networks.Items {
 		if n.Name == networkName {
 			networkID = n.ID
 			break
@@ -416,18 +417,18 @@ func (d *DockerLCM) FindNetworkByName(networkName string) (*network.Inspect, err
 		return nil, fmt.Errorf("failed to find network %s", networkID)
 	}
 
-	network, err := d.client.NetworkInspect(context.Background(), networkID, network.InspectOptions{})
+	res, err := d.client.NetworkInspect(context.Background(), networkID, docker.NetworkInspectOptions{})
 	if err != nil {
 		return nil, err
 	}
 
-	return &network, nil
+	return &res.Network, nil
 }
 
 // find container in docker using address and IP
 // there could be some edges cases that this does not properly handle
-func (d *DockerLCM) FindContainerByBoundAddress(address string) (*dockerTypes.ContainerJSON, error) {
-	containers, err := d.client.ContainerList(context.Background(), dockerContainer.ListOptions{})
+func (d *DockerLCM) FindContainerByBoundAddress(address string) (*dockerContainer.InspectResponse, error) {
+	containers, err := d.client.ContainerList(context.Background(), docker.ContainerListOptions{})
 	if err != nil {
 		return nil, err
 	}
@@ -437,8 +438,8 @@ func (d *DockerLCM) FindContainerByBoundAddress(address string) (*dockerTypes.Co
 		return nil, fmt.Errorf("failed to parse %s: %w", address, err)
 	}
 
-	for _, c := range containers {
-		container, err := d.client.ContainerInspect(context.Background(), c.ID)
+	for _, c := range containers.Items {
+		container, err := inspectContainer(context.Background(), d.client, c.ID)
 		if err != nil {
 			return nil, err
 		}
@@ -446,7 +447,7 @@ func (d *DockerLCM) FindContainerByBoundAddress(address string) (*dockerTypes.Co
 		portBindings := container.HostConfig.PortBindings
 		for _, bindings := range portBindings {
 			for _, b := range bindings {
-				if b.HostPort == strconv.Itoa(addrPort.Port) && isIPSame(b.HostIP, addrPort.IP.String()) {
+				if b.HostPort == strconv.Itoa(addrPort.Port) && isIPSame(addrString(b.HostIP), addrPort.IP.String()) {
 					return &container, nil
 				}
 			}
@@ -468,13 +469,13 @@ func isIPSame(ip1, ip2 string) bool {
 	return n1.Equal(n2)
 }
 
-func IsInDefaultBridgeNetwork(container *dockerTypes.ContainerJSON) bool {
+func IsInDefaultBridgeNetwork(container *dockerContainer.InspectResponse) bool {
 	networkName, _ := getNetworkEndpointOfContainer(container)
 	return networkName == "bridge"
 }
 
 // this assumes container belongs to a single network only
-func getNetworkEndpointOfContainer(container *dockerTypes.ContainerJSON) (string, *network.EndpointSettings) {
+func getNetworkEndpointOfContainer(container *dockerContainer.InspectResponse) (string, *network.EndpointSettings) {
 	if container.NetworkSettings == nil {
 		return "", nil
 	}
@@ -484,4 +485,17 @@ func getNetworkEndpointOfContainer(container *dockerTypes.ContainerJSON) (string
 	}
 
 	return "", nil
+}
+
+func inspectContainer(ctx context.Context, cli *docker.Client, containerID string) (dockerContainer.InspectResponse, error) {
+	res, err := cli.ContainerInspect(ctx, containerID, docker.ContainerInspectOptions{})
+	return res.Container, err
+}
+
+// addrString renders an unset address as "", the form the daemon's string API used.
+func addrString(a netip.Addr) string {
+	if !a.IsValid() {
+		return ""
+	}
+	return a.String()
 }
